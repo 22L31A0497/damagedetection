@@ -1,0 +1,287 @@
+'use client';
+import { useState } from 'react';
+import Image from 'next/image';
+import { preprocessImage } from '../utils/imageProcessing';
+
+interface AnalysisResult {
+  damagePercentage: number;
+  confidence: number;
+}
+
+interface ImageAnalysis {
+  imageUrl: string;
+  fileName: string;
+  originalFile: File;
+  processedBlob?: Blob;
+  result: AnalysisResult | null;
+  error?: string;
+}
+
+enum ProcessingStage {
+  IDLE,
+  PREPROCESSING,
+  ANALYZING
+}
+
+export default function MultiImageUpload() {
+  const [images, setImages] = useState<ImageAnalysis[]>([]);
+  const [stage, setStage] = useState<ProcessingStage>(ProcessingStage.IDLE);
+  const [progress, setProgress] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
+  const [overallAnalysis, setOverallAnalysis] = useState<AnalysisResult | null>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    
+    if (files.length === 0) {
+      setError('Please select at least one image');
+      return;
+    }
+
+    // Filter for image files only
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    if (imageFiles.length !== files.length) {
+      setError('Please select image files only');
+      return;
+    }
+
+    const newImages: ImageAnalysis[] = imageFiles.map(file => ({
+      imageUrl: URL.createObjectURL(file),
+      fileName: file.name,
+      originalFile: file,
+      result: null
+    }));
+
+    setImages(newImages);
+    setOverallAnalysis(null);
+    setError(null);
+  };
+
+  const preprocessImages = async () => {
+    setStage(ProcessingStage.PREPROCESSING);
+    setProgress(0);
+    setError(null);
+
+    try {
+      const updatedImages = [...images];
+      
+      for (let i = 0; i < images.length; i++) {
+        try {
+          setProgress(Math.round((i / images.length) * 50)); // First 50% for preprocessing
+          
+          const processedBlob = await preprocessImage(images[i].originalFile);
+          updatedImages[i] = { 
+            ...images[i], 
+            processedBlob,
+          };
+        } catch (error) {
+          updatedImages[i] = { 
+            ...images[i], 
+            error: 'Failed to preprocess image' 
+          };
+        }
+      }
+
+      setImages(updatedImages);
+      return true;
+    } catch (error) {
+      setError('Image preprocessing failed');
+      return false;
+    }
+  };
+
+  const analyzeImages = async () => {
+    if (images.length === 0) {
+      setError('Please select at least one image');
+      return;
+    }
+
+    // Step 1: Preprocessing
+    const preprocessSuccess = await preprocessImages();
+    if (!preprocessSuccess) return;
+
+    // Step 2: Analysis
+    setStage(ProcessingStage.ANALYZING);
+    
+    try {
+      const updatedImages = [...images];
+      
+      for (let i = 0; i < images.length; i++) {
+        try {
+          setProgress(50 + Math.round((i / images.length) * 50)); // Last 50% for analysis
+          
+          if (!images[i].processedBlob) {
+            throw new Error('Image not preprocessed');
+          }
+
+          const formData = new FormData();
+          formData.append('file', images[i].processedBlob, images[i].fileName);
+
+          const analysisResponse = await fetch('/api/analyze', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!analysisResponse.ok) {
+            throw new Error(`Analysis failed for ${images[i].fileName}`);
+          }
+
+          const result = await analysisResponse.json();
+          updatedImages[i] = { ...images[i], result };
+          setImages([...updatedImages]);
+        } catch (error) {
+          updatedImages[i] = { 
+            ...images[i], 
+            error: error instanceof Error ? error.message : 'Analysis failed for this image' 
+          };
+          setImages([...updatedImages]);
+        }
+      }
+
+      // Calculate overall analysis
+      const validResults = updatedImages.filter(img => img.result);
+      if (validResults.length > 0) {
+        const averageDamage = validResults.reduce((sum, img) => sum + (img.result?.damagePercentage || 0), 0) / validResults.length;
+        const averageConfidence = validResults.reduce((sum, img) => sum + (img.result?.confidence || 0), 0) / validResults.length;
+        
+        setOverallAnalysis({
+          damagePercentage: Math.round(averageDamage),
+          confidence: Math.round(averageConfidence)
+        });
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Analysis failed');
+    } finally {
+      setStage(ProcessingStage.IDLE);
+      setProgress(100);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-8 space-y-8 bg-gray-800/50 rounded-xl backdrop-blur-sm">
+      <div className="border-3 border-dashed border-indigo-400 rounded-xl p-10 text-center bg-gray-800/50">
+        <input
+          type="file"
+          onChange={handleFileChange}
+          accept="image/*"
+          multiple
+          className="hidden"
+          id="fileInput"
+          disabled={stage !== ProcessingStage.IDLE}
+        />
+        <label
+          htmlFor="fileInput"
+          className={`cursor-pointer text-indigo-400 hover:text-indigo-300 text-lg font-medium transition-colors duration-200 flex flex-col items-center gap-4 ${
+            stage !== ProcessingStage.IDLE ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          </svg>
+          <span className="text-gray-300">Drop your car damage photos here<br />or click to browse</span>
+        </label>
+      </div>
+
+      {error && (
+        <div className="bg-red-900/20 border border-red-500/50 text-red-400 p-4 rounded-lg text-center">
+          {error}
+        </div>
+      )}
+
+      {stage !== ProcessingStage.IDLE && (
+        <div className="text-center space-y-4">
+          <div className="inline-flex items-center gap-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500" />
+            <span className="text-indigo-300">
+              {stage === ProcessingStage.PREPROCESSING
+                ? "Enhancing your images (reducing noise, adjusting brightness...)"
+                : "Analyzing damage..."}
+            </span>
+          </div>
+          <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+            <div 
+              className="bg-indigo-500 h-full transition-all duration-300 ease-in-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {images.length > 0 && stage === ProcessingStage.IDLE && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {images.map((image, index) => (
+            <div key={index} className="bg-gray-800/30 p-4 rounded-lg">
+              <div className="relative h-48 w-full mb-4 rounded-lg overflow-hidden">
+                <Image
+                  src={image.imageUrl}
+                  alt={`Car damage ${index + 1}`}
+                  fill
+                  className="object-cover"
+                />
+              </div>
+              <p className="text-gray-300 truncate mb-2">{image.fileName}</p>
+              {image.result && (
+                <div className="space-y-2">
+                  <div className="relative pt-1">
+                    <div className="flex mb-2 items-center justify-between">
+                      <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-indigo-300 bg-indigo-900/50">
+                        Damage: {image.result.damagePercentage}%
+                      </span>
+                    </div>
+                    <div className="overflow-hidden h-2 mb-4 text-xs flex rounded-full bg-gray-700">
+                      <div
+                        style={{ width: `${image.result.damagePercentage}%` }}
+                        className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {image.error && (
+                <p className="text-red-400 text-sm">{image.error}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {images.length > 0 && stage === ProcessingStage.IDLE && (
+        <button
+          onClick={analyzeImages}
+          className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg hover:bg-indigo-500 disabled:bg-gray-600 transition-colors duration-200 text-lg font-semibold"
+        >
+          Analyze All Images
+        </button>
+      )}
+
+      {overallAnalysis && (
+        <div className="mt-8 bg-gray-800/30 p-6 rounded-xl border border-indigo-500/30">
+          <h3 className="text-xl font-semibold mb-4 text-indigo-300">Overall Damage Analysis</h3>
+          <div className="space-y-4">
+            <div className="relative pt-1">
+              <div className="flex mb-2 items-center justify-between">
+                <span className="text-sm font-semibold inline-block py-1 px-2 uppercase rounded-full text-indigo-300 bg-indigo-900/50">
+                  Average Damage
+                </span>
+                <span className="text-indigo-300 text-sm font-semibold">
+                  {overallAnalysis.damagePercentage}%
+                </span>
+              </div>
+              <div className="overflow-hidden h-2 mb-4 text-xs flex rounded-full bg-gray-700">
+                <div
+                  style={{ width: `${overallAnalysis.damagePercentage}%` }}
+                  className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500"
+                />
+              </div>
+            </div>
+            <div>
+              <span className="text-gray-300 text-sm">
+                Analysis Confidence: {overallAnalysis.confidence}%
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

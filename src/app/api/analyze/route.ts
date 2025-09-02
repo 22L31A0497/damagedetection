@@ -22,10 +22,8 @@ export async function POST(req: NextRequest) {
     console.log("Processing file:", file.name, "Type:", file.type);
     const imageBytes = await file.arrayBuffer();
 
-    // ✅ Fix: Convert ArrayBuffer to base64 without Buffer
-    const base64Image = btoa(
-      String.fromCharCode(...new Uint8Array(imageBytes))
-    );
+    // Convert ArrayBuffer → base64
+    const base64Image = Buffer.from(imageBytes).toString("base64");
 
     const prompt = `Analyze this image for damage and rate it on a scale of 0-100% considering:
       - Surface damage
@@ -45,19 +43,16 @@ export async function POST(req: NextRequest) {
 
     console.log("Sending request to Google AI...");
     const response = await fetch(
-     `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [
             {
               parts: [
                 { text: prompt },
                 {
-                  // ✅ Fix: use inlineData, not inline_data
                   inlineData: {
                     mimeType: file.type,
                     data: base64Image,
@@ -83,7 +78,7 @@ export async function POST(req: NextRequest) {
 
     const text =
       result?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      result?.candidates?.[0]?.output || // fallback
+      result?.candidates?.[0]?.output ||
       "";
 
     if (!text) {
@@ -111,9 +106,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Analysis error:", error);
     return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to analyze file",
-      },
+      { error: error instanceof Error ? error.message : "Failed to analyze file" },
       { status: 500 }
     );
   }
