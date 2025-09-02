@@ -25,7 +25,7 @@ enum ProcessingStage {
 
 export default function MultiImageUpload() {
   const [images, setImages] = useState<ImageAnalysis[]>([]);
-  const [stage, setStage] = useState<ProcessingStage>(ProcessingStage.IDLE as ProcessingStage);
+  const [stage, setStage] = useState<ProcessingStage>(ProcessingStage.IDLE);
   const [progress, setProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [overallAnalysis, setOverallAnalysis] = useState<AnalysisResult | null>(
@@ -33,6 +33,10 @@ export default function MultiImageUpload() {
   );
   const [enhanced, setEnhanced] = useState<boolean>(false);
   const [analyzed, setAnalyzed] = useState<boolean>(false);
+
+  // boolean flags to avoid TypeScript enum-boolean confusion
+  const isPreprocessing = stage === ProcessingStage.PREPROCESSING;
+  const isAnalyzing = stage === ProcessingStage.ANALYZING;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -60,6 +64,8 @@ export default function MultiImageUpload() {
     setError(null);
     setEnhanced(false);
     setAnalyzed(false);
+    setProgress(0);
+    setStage(ProcessingStage.IDLE);
   };
 
   const preprocessImage = (file: File): Promise<Blob> => {
@@ -94,6 +100,7 @@ export default function MultiImageUpload() {
     try {
       const processedImages = [...images];
 
+      // artificial delay for smoother UX
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       for (let i = 0; i < images.length; i++) {
@@ -105,12 +112,14 @@ export default function MultiImageUpload() {
             processedBlob,
             error: undefined,
           };
+          // immediate UI update after each processed image
           setImages([...processedImages]);
         } catch (err) {
           processedImages[i] = {
             ...images[i],
             error: "Failed to preprocess",
           };
+          setImages([...processedImages]);
         }
       }
 
@@ -120,6 +129,9 @@ export default function MultiImageUpload() {
       setError("Image preprocessing failed");
     } finally {
       setStage(ProcessingStage.IDLE);
+      setProgress(100);
+      // small pause to show completion to user
+      setTimeout(() => setProgress(0), 300);
     }
   };
 
@@ -143,6 +155,7 @@ export default function MultiImageUpload() {
         const currentImage = images[i];
 
         const formData = new FormData();
+        // if image enhanced -> send processedBlob, otherwise fallback to originalFile
         formData.append(
           "file",
           currentImage.processedBlob || currentImage.originalFile,
@@ -158,6 +171,7 @@ export default function MultiImageUpload() {
 
         const result = await res.json();
         updatedImages[i] = { ...images[i], result };
+        // update UI progressively
         setImages([...updatedImages]);
       }
 
@@ -186,6 +200,8 @@ export default function MultiImageUpload() {
     } finally {
       setStage(ProcessingStage.IDLE);
       setProgress(100);
+      // small pause to show completion
+      setTimeout(() => setProgress(0), 300);
     }
   };
 
@@ -294,40 +310,32 @@ export default function MultiImageUpload() {
             </p>
             <button
               onClick={preprocessImages}
-              disabled={stage === ProcessingStage.PREPROCESSING || enhanced}
+              disabled={isPreprocessing || enhanced}
               className={`w-full py-3 px-6 rounded-lg text-lg font-semibold transition-colors duration-200
                 ${
                   enhanced
-                    ? "bg-green-600 text-white cursor-default"
-                    : stage === ProcessingStage.PREPROCESSING
+                    ? "bg-green-600 text-white cursor-not-allowed"
+                    : isPreprocessing
                     ? "bg-yellow-500 text-white animate-pulse"
                     : "bg-yellow-600 text-white hover:bg-yellow-500"
                 }`}
             >
-              {stage === ProcessingStage.PREPROCESSING
-                ? "Enhancing..."
-                : enhanced
-                ? "Enhanced ✅"
-                : "Enhance Images"}
+              {isPreprocessing ? "Enhancing..." : enhanced ? "Enhanced ✅" : "Enhance Images"}
             </button>
           </div>
           <button
             onClick={analyzeImages}
-            disabled={stage === ProcessingStage.ANALYZING || analyzed}
+            disabled={isAnalyzing || analyzed}
             className={`w-full py-3 px-6 rounded-lg text-lg font-semibold transition-colors duration-200
               ${
                 analyzed
-                  ? "bg-green-600 text-white cursor-default"
-                  : stage === ProcessingStage.ANALYZING
+                  ? "bg-green-600 text-white cursor-not-allowed"
+                  : isAnalyzing
                   ? "bg-indigo-500 text-white animate-pulse"
                   : "bg-indigo-600 text-white hover:bg-indigo-500"
               }`}
           >
-            {stage === ProcessingStage.ANALYZING
-              ? "Analyzing..."
-              : analyzed
-              ? "Analyzed ✅"
-              : "Analyze Damage"}
+            {isAnalyzing ? "Analyzing..." : analyzed ? "Analyzed ✅" : "Analyze Damage"}
           </button>
         </div>
       )}
