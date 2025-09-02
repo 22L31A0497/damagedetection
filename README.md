@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Damage Prediction Project
 
-## Getting Started
+This project is a **Next.js application** integrated with **Google AI Studio APIs** for object damage prediction. The system allows users to upload images, process them through the ML API, and return predictions with confidence levels.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🚀 Features
+
+* **Next.js Backend API Routes** – Handles requests and communicates with the ML API.
+* **File Upload Support** – Users can upload images for prediction.
+* **ML Integration** – Uses Google AI Studio API for analyzing the uploaded image.
+* **Prediction Response** – Returns damage classification with confidence levels.
+* **Error Handling** – Includes proper error responses for missing/invalid files.
+
+---
+
+## 📂 Project Structure
+
+```
+src/
+ └── app/
+     ├── api/
+     │   ├── analyze/route.ts       # ML analysis endpoint
+     │   ├── upload/route.ts        # Handles file upload
+     │   └── ... other APIs
+     ├── components/                # Reusable frontend components (not included here)
+     ├── page.tsx                   # Main entry page
+     └── layout.tsx                 # Global layout
+lib/
+ └── connectDB.ts                   # Database connection utility (if used later)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## ⚙️ Workflow
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **User Uploads an Image**
 
-## Learn More
+   * The app accepts an uploaded file via `formData`.
 
-To learn more about Next.js, take a look at the following resources:
+2. **API Processing**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   * File is passed to the backend (`api/analyze/route.ts`).
+   * ML API (`generateContent`) is called with the uploaded image.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+3. **Prediction Output**
 
-## Deploy on Vercel
+   * The response contains:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+     * **Damage Status** (e.g., "Damaged", "Not Damaged")
+     * **Confidence Score (%)**
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+4. **Result Sent to Frontend**
+
+   * JSON response is sent back to the client.
+
+---
+
+## 🔑 API Usage
+
+* **Google AI Studio Key** is used for making requests.
+* Model: `gemini-pro-vision` (supports vision-based predictions).
+* Example request (simplified):
+
+```ts
+const formData = new FormData();
+formData.append("file", file);
+
+const res = await fetch("/api/analyze", {
+  method: "POST",
+  body: formData,
+});
+const result = await res.json();
+```
+
+---
+
+## 🛠️ What Has Been Done So Far
+
+* Set up **Next.js project structure**.
+* Implemented **file upload & API route handling**.
+* Integrated **Google AI Studio API** for ML predictions.
+* Successfully tested predictions for damage detection.
+* Implemented **error handling** for missing/invalid inputs.
+
+---
+
+## 📌 Next Steps
+
+* Improve **confidence score accuracy** (data preprocessing / fine-tuning).
+* Add **frontend UI styling** for better UX.
+* Expand prediction categories if required.
+
+---
+
