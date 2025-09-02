@@ -1,0 +1,91 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('file') as File;
+
+    if (!file) {
+      return NextResponse.json(
+        { error: 'No file provided' },
+        { status: 400 }
+      );
+    }
+
+    if (!process.env.GOOGLE_AI_API_KEY) {
+      return NextResponse.json(
+        { error: 'Google AI API key not configured' },
+        { status: 500 }
+      );
+    }
+
+    const imageBytes = await file.arrayBuffer();
+    const base64Image = Buffer.from(imageBytes).toString('base64');
+
+    const prompt = `Analyze this image for any visible damage. Consider:
+      1. Surface damage
+      2. Structural integrity
+      3. Visible defects
+      4. Overall condition
+      
+      Rate the damage on a scale of 0-100%, where:
+      0-20%: Minor cosmetic damage
+      21-40%: Moderate damage, may need attention
+      41-60%: Significant damage requiring repair
+      61-80%: Severe damage, immediate attention needed
+      81-100%: Critical/structural damage
+      
+      Provide two numbers:
+      1. Damage percentage (0-100)
+      2. Confidence in assessment (0-100)`;
+
+    try {
+      const response = await fetch('https://api.googleapis.com/v1/models/gemini-pro-vision:generateContent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.GOOGLE_AI_API_KEY}`
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              {
+                inline_data: {
+                  mime_type: file.type,
+                  data: base64Image
+                }
+              }
+            ]
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to analyze image with Google AI');
+      }
+
+      const result = await response.json();
+      
+      // Parse the response to extract percentages
+      const text = result.candidates[0].content.parts[0].text;
+      
+      // Extract numbers using regex
+      const damageMatch = text.match(/damage percentage:?\s*(\d+)/i);
+      const confidenceMatch = text.match(/confidence:?\s*(\d+)/i);
+
+      const analysis = {
+        damagePercentage: damageMatch ? parseInt(damageMatch[1]) : 0,
+        confidence: confidenceMatch ? parseInt(confidenceMatch[1]) : 90,
+      };
+
+    console.log('Sending analysis:', mockAnalysis);
+    return NextResponse.json(mockAnalysis);
+  } catch (error) {
+    console.error('Analysis error:', error);
+    return NextResponse.json(
+      { error: 'Failed to analyze file' },
+      { status: 500 }
+    );
+  }
+}
