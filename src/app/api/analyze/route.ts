@@ -11,98 +11,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    if (!process.env.GOOGLE_AI_API_KEY) {
-      console.error("Google AI API key not configured");
-      return NextResponse.json(
-        { error: "Google AI API key not configured" },
-        { status: 500 }
-      );
-    }
+    console.log("Forwarding file to Django backend...");
 
-    console.log("Processing file:", file.name, "Type:", file.type);
-    const imageBytes = await file.arrayBuffer();
+    // Prepare form data for Django backend
+    const backendForm = new FormData();
+    backendForm.append("file", file, file.name);
 
-    // Convert ArrayBuffer → base64
-    const base64Image = Buffer.from(imageBytes).toString("base64");
-
-    const prompt = `Analyze this image for damage and rate it on a scale of 0-100% considering:
-      - Surface damage
-      - Structural integrity
-      - Visible defects
-      - Overall condition
-
-      0-20%: Minor cosmetic damage
-      21-40%: Moderate damage
-      41-60%: Significant damage
-      61-80%: Severe damage
-      81-100%: Critical damage
-
-      Return exactly:
-      Damage percentage: [0-100]
-      Confidence: [0-100]`;
-
-    console.log("Sending request to Google AI...");
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GOOGLE_AI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    mimeType: file.type,
-                    data: base64Image,
-                  },
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
+    // Call Django backend API
+    const response = await fetch("http://127.0.0.1:8000/api/analyze/", {
+      method: "POST",
+      body: backendForm,
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("Google AI API error:", response.status, errorText);
-      throw new Error(
-        `Failed to analyze image: ${response.status} ${errorText}`
+      console.error("Backend API error:", response.status, errorText);
+      return NextResponse.json(
+        { error: `Backend error: ${response.status}` },
+        { status: response.status }
       );
     }
 
+    // Get JSON response from Django (should contain damagePercentage + confidence)
     const result = await response.json();
-    console.log("Received response from Google AI:", result);
+    console.log("Received response from Django backend:", result);
 
-    const text =
-      result?.candidates?.[0]?.content?.parts?.[0]?.text ||
-      result?.candidates?.[0]?.output ||
-      "";
-
-    if (!text) {
-      console.error("Unexpected API response format:", result);
-      throw new Error("Invalid response format from Google AI");
-    }
-
-    console.log("AI Response text:", text);
-
-    const damageMatch = text.match(/damage percentage:?\s*(\d+)/i);
-    const confidenceMatch = text.match(/confidence:?\s*(\d+)/i);
-
-    if (!damageMatch || !confidenceMatch) {
-      console.error("Failed to extract numbers from response:", text);
-      throw new Error("Could not parse damage assessment from AI response");
-    }
-
-    const analysis = {
-      damagePercentage: Math.min(parseInt(damageMatch[1]), 100),
-      confidence: Math.min(parseInt(confidenceMatch[1]), 100),
-    };
-
-    console.log("Final analysis:", analysis);
-    return NextResponse.json(analysis);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Analysis error:", error);
     return NextResponse.json(

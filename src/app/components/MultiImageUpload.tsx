@@ -34,7 +34,7 @@ export default function MultiImageUpload() {
   const [enhanced, setEnhanced] = useState<boolean>(false);
   const [analyzed, setAnalyzed] = useState<boolean>(false);
 
-  // boolean flags to avoid TypeScript enum-boolean confusion
+  // Flags
   const isPreprocessing = stage === ProcessingStage.PREPROCESSING;
   const isAnalyzing = stage === ProcessingStage.ANALYZING;
 
@@ -100,9 +100,6 @@ export default function MultiImageUpload() {
     try {
       const processedImages = [...images];
 
-      // artificial delay for smoother UX
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
       for (let i = 0; i < images.length; i++) {
         setProgress(Math.round(((i + 1) / images.length) * 100));
         try {
@@ -112,7 +109,6 @@ export default function MultiImageUpload() {
             processedBlob,
             error: undefined,
           };
-          // immediate UI update after each processed image
           setImages([...processedImages]);
         } catch (err) {
           processedImages[i] = {
@@ -130,7 +126,6 @@ export default function MultiImageUpload() {
     } finally {
       setStage(ProcessingStage.IDLE);
       setProgress(100);
-      // small pause to show completion to user
       setTimeout(() => setProgress(0), 300);
     }
   };
@@ -153,9 +148,7 @@ export default function MultiImageUpload() {
         setProgress(Math.round(((i + 1) / images.length) * 100));
 
         const currentImage = images[i];
-
         const formData = new FormData();
-        // if image enhanced -> send processedBlob, otherwise fallback to originalFile
         formData.append(
           "file",
           currentImage.processedBlob || currentImage.originalFile,
@@ -170,27 +163,22 @@ export default function MultiImageUpload() {
         if (!res.ok) throw new Error("Analysis failed");
 
         const result = await res.json();
-        updatedImages[i] = { ...images[i], result };
-        // update UI progressively
+
+        // ✅ Map backend response to frontend shape
+        updatedImages[i] = {
+          ...images[i],
+          result: {
+            damagePercentage: result.overallDamagePercentage,
+            confidence: result.overallConfidence,
+          },
+        };
+
         setImages([...updatedImages]);
-      }
 
-      const validResults = updatedImages.filter((img) => img.result);
-      if (validResults.length > 0) {
-        const avgDamage =
-          validResults.reduce(
-            (sum, img) => sum + (img.result?.damagePercentage || 0),
-            0
-          ) / validResults.length;
-        const avgConfidence =
-          validResults.reduce(
-            (sum, img) => sum + (img.result?.confidence || 0),
-            0
-          ) / validResults.length;
-
+        // ✅ Take overall analysis directly from backend
         setOverallAnalysis({
-          damagePercentage: Math.round(avgDamage),
-          confidence: Math.round(avgConfidence),
+          damagePercentage: result.overallDamagePercentage,
+          confidence: result.overallConfidence,
         });
       }
 
@@ -200,14 +188,13 @@ export default function MultiImageUpload() {
     } finally {
       setStage(ProcessingStage.IDLE);
       setProgress(100);
-      // small pause to show completion
       setTimeout(() => setProgress(0), 300);
     }
   };
 
   return (
     <div className="max-w-4xl mx-auto p-8 space-y-8 bg-gray-800/50 rounded-xl backdrop-blur-sm">
-      {/* Upload area */}
+      {/* Upload Area */}
       <div className="border-3 border-dashed border-indigo-400 rounded-xl p-10 text-center bg-gray-800/50">
         <input
           type="file"
@@ -244,14 +231,14 @@ export default function MultiImageUpload() {
         </label>
       </div>
 
-      {/* Error message */}
+      {/* Error */}
       {error && (
         <div className="bg-red-900/20 border border-red-500/50 text-red-400 p-4 rounded-lg text-center">
           {error}
         </div>
       )}
 
-      {/* Image cards */}
+      {/* Image Cards */}
       {images.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {images.map((image, idx) => (
@@ -301,7 +288,7 @@ export default function MultiImageUpload() {
         </div>
       )}
 
-      {/* Action buttons */}
+      {/* Buttons */}
       {images.length > 0 && stage === ProcessingStage.IDLE && (
         <div className="space-y-4">
           <div>
@@ -320,7 +307,11 @@ export default function MultiImageUpload() {
                     : "bg-yellow-600 text-white hover:bg-yellow-500"
                 }`}
             >
-              {isPreprocessing ? "Enhancing..." : enhanced ? "Enhanced ✅" : "Enhance Images"}
+              {isPreprocessing
+                ? "Enhancing..."
+                : enhanced
+                ? "Enhanced ✅"
+                : "Enhance Images"}
             </button>
           </div>
           <button
@@ -335,12 +326,16 @@ export default function MultiImageUpload() {
                   : "bg-indigo-600 text-white hover:bg-indigo-500"
               }`}
           >
-            {isAnalyzing ? "Analyzing..." : analyzed ? "Analyzed ✅" : "Analyze Damage"}
+            {isAnalyzing
+              ? "Analyzing..."
+              : analyzed
+              ? "Analyzed ✅"
+              : "Analyze Damage"}
           </button>
         </div>
       )}
 
-      {/* Overall results */}
+      {/* Overall Analysis */}
       {overallAnalysis && (
         <div className="mt-8 bg-gray-800/30 p-6 rounded-xl border border-indigo-500/30">
           <h3 className="text-xl font-semibold mb-4 text-indigo-300">

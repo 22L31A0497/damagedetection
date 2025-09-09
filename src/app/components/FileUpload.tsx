@@ -62,7 +62,12 @@ export default function FileUpload() {
 
       const data = await response.json();
       console.log('Received analysis result:', data);
-      setResult(data);
+
+      // ✅ Map backend response to frontend shape
+      setResult({
+        damagePercentage: data.overallDamagePercentage,
+        confidence: data.overallConfidence,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
